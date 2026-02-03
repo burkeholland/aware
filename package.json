@@ -2,7 +2,7 @@
   "name": "aware",
   "displayName": "Aware",
   "description": "AI-powered awareness manager that tracks your M365 meetings and helps make sure you never miss an important event.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "burkeholland",
   "license": "MIT",
   "repository": {

@@ -62,11 +62,11 @@ export function activate(context: vscode.ExtensionContext) {
     registerTools(context, meetingService);
 
     // Check if Work IQ MCP server is available and offer to install if not
-    checkAndOfferWorkIQInstall(context);
+    checkAndOfferWorkIQInstall();
 
     // Register commands
     registerCommands(
-        context,
+        context, 
         documentsTreeProvider,
         modelSelector
     );
@@ -278,8 +278,9 @@ function registerCommands(
 async function refreshMeetings(): Promise<void> {
     log('Refreshing meetings...');
     try {
-        await meetingService.fetchMeetings('today');
-        log(`Loaded ${meetingService.getCachedMeetings().length} meetings for today`);
+        // Fetch all meetings in a single query and split into today/tomorrow/week
+        const result = await meetingService.fetchAllMeetings();
+        log(`Loaded meetings: ${result.today.length} today, ${result.tomorrow.length} tomorrow, ${result.week.length} this week`);
     } catch (error) {
         log(`Failed to refresh meetings: ${error}`);
     }
@@ -332,15 +333,7 @@ function getMinutesUntil(date: Date): number {
  * Checks if Work IQ MCP server is available and offers to install it if not.
  * Adds the server configuration to user settings when user accepts.
  */
-async function checkAndOfferWorkIQInstall(context: vscode.ExtensionContext): Promise<void> {
-    const WORKIQ_PROMPT_DISMISSED_KEY = 'aware.workiqPromptDismissed';
-    
-    // Check if user has dismissed the prompt permanently
-    if (context.globalState.get<boolean>(WORKIQ_PROMPT_DISMISSED_KEY)) {
-        log('Work IQ prompt was previously dismissed by user');
-        return;
-    }
-    
+async function checkAndOfferWorkIQInstall(): Promise<void> {
     // Check if Work IQ tool is already available
     const workIQAvailable = vscode.lm.tools.some(tool => {
         const name = tool.name.toLowerCase();
@@ -367,15 +360,11 @@ async function checkAndOfferWorkIQInstall(context: vscode.ExtensionContext): Pro
     const choice = await vscode.window.showInformationMessage(
         'Aware requires the Work IQ MCP server to access your Microsoft 365 calendar. Would you like to add it to your settings?',
         'Yes, add Work IQ',
-        "Don't ask again",
         'No thanks'
     );
     
     if (choice === 'Yes, add Work IQ') {
         await addWorkIQToSettings();
-    } else if (choice === "Don't ask again") {
-        await context.globalState.update(WORKIQ_PROMPT_DISMISSED_KEY, true);
-        log('User dismissed Work IQ prompt permanently');
     }
 }
 

@@ -37,8 +37,18 @@ class GetMeetingsTool implements vscode.LanguageModelTool<GetMeetingsInput> {
     ): Promise<vscode.LanguageModelToolResult> {
         const timeRange: TimeRange = options.input.timeRange || 'today';
         
-        await this.meetingService.fetchMeetings(timeRange);
-        const meetings = this.meetingService.getCachedMeetings();
+        // Use cached data based on time range (no additional API calls)
+        let meetings;
+        switch (timeRange) {
+            case 'tomorrow':
+                meetings = this.meetingService.getCachedTomorrowMeetings();
+                break;
+            case 'week':
+                meetings = this.meetingService.getCachedWeekMeetings();
+                break;
+            default:
+                meetings = this.meetingService.getCachedMeetings();
+        }
 
         const meetingsList = meetings.map(m => ({
             title: m.title,

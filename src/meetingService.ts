@@ -62,6 +62,59 @@ export class MeetingService {
         }
     }
 
+    /**
+     * Fetches all meetings for the week in a single query and splits them into
+     * today/tomorrow/week buckets. This is more efficient than making 3 separate calls.
+     */
+    async fetchAllMeetings(): Promise<{ today: Meeting[]; tomorrow: Meeting[]; week: Meeting[] }> {
+        this.log('Fetching all meetings (single query)...');
+        this._onLoadingStarted.fire();
+
+        try {
+            // Query for the entire week
+            const response = await this.queryWorkIQ('week');
+            const allMeetings = this.parseMeetings(response);
+
+            // Split meetings into buckets based on date (DST-safe using setDate)
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const tomorrowStart = new Date(todayStart);
+            tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+            const dayAfterTomorrowStart = new Date(tomorrowStart);
+            dayAfterTomorrowStart.setDate(dayAfterTomorrowStart.getDate() + 1);
+
+            const todayMeetings: Meeting[] = [];
+            const tomorrowMeetings: Meeting[] = [];
+
+            for (const meeting of allMeetings) {
+                const meetingDate = meeting.startTime;
+                if (meetingDate >= todayStart && meetingDate < tomorrowStart) {
+                    todayMeetings.push(meeting);
+                } else if (meetingDate >= tomorrowStart && meetingDate < dayAfterTomorrowStart) {
+                    tomorrowMeetings.push(meeting);
+                }
+            }
+
+            // Update caches
+            this.meetings = todayMeetings;
+            this.tomorrowMeetings = tomorrowMeetings;
+            this.weekMeetings = allMeetings;
+            this.lastRefresh = new Date();
+            this.lastError = null;
+
+            this._onMeetingsUpdated.fire(this.meetings);
+            this.log(`Fetched ${allMeetings.length} total meetings: ${todayMeetings.length} today, ${tomorrowMeetings.length} tomorrow, ${allMeetings.length} this week`);
+
+            return { today: todayMeetings, tomorrow: tomorrowMeetings, week: allMeetings };
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this.log(`Failed to fetch all meetings: ${errorMessage}`);
+            this.lastError = this.formatErrorMessage(errorMessage);
+            this._onMeetingsUpdated.fire(this.meetings);
+            return { today: this.meetings, tomorrow: this.tomorrowMeetings, week: this.weekMeetings };
+        }
+    }
+
     private formatErrorMessage(error: string): string {
         if (error.includes('not available') || error.includes('not found')) {
             return 'Work IQ MCP server is not running. Start it from the MCP Servers panel.';
@@ -171,8 +224,11 @@ export class MeetingService {
                     
                     const joinUrl = teamsUrls[i] || item.onlineJoinUrl || undefined;
                     
+                    // Create stable ID from title + start time so notifications aren't duplicated
+                    const stableId = `${item.title}-${item.startTime}`.replace(/[^a-zA-Z0-9-]/g, '_');
+                    
                     meetings.push({
-                        id: `meeting-${i}-${Date.now()}`,
+                        id: stableId,
                         title: item.title,
                         startTime,
                         endTime,

@@ -3,7 +3,7 @@ applyTo: '**'
 ---
 
 <variables>
-  LAST_UPDATED_TIMESTAMP: '2026-01-20T10:05:00Z'
+   LAST_UPDATED_TIMESTAMP: '2026-02-03T00:10:00Z'
 </variables>
 
 ## CRITICAL: Check for important emails and meetings LAST

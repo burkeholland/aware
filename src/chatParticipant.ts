@@ -95,7 +95,7 @@ export class AwareChatParticipant {
     ): Promise<vscode.ChatResult> {
         stream.progress('Fetching your meetings...');
 
-        // Determine time range from prompt
+        // Determine time range from prompt and use cached data (no additional API calls)
         let timeRange: 'today' | 'tomorrow' | 'week' = 'today';
         const prompt = request.prompt.toLowerCase();
         if (prompt.includes('tomorrow')) {
@@ -104,8 +104,18 @@ export class AwareChatParticipant {
             timeRange = 'week';
         }
 
-        await this.meetingService.fetchMeetings(timeRange);
-        const meetings = this.meetingService.getCachedMeetings();
+        // Use cached data based on time range
+        let meetings;
+        switch (timeRange) {
+            case 'tomorrow':
+                meetings = this.meetingService.getCachedTomorrowMeetings();
+                break;
+            case 'week':
+                meetings = this.meetingService.getCachedWeekMeetings();
+                break;
+            default:
+                meetings = this.meetingService.getCachedMeetings();
+        }
 
         if (meetings.length === 0) {
             stream.markdown(`📅 You have no meetings ${timeRange}.`);
