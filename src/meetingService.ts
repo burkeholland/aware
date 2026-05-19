@@ -142,14 +142,14 @@ export class MeetingService {
 
         // Build date strings
         const now = new Date();
-        const todayDate = now.toISOString().split('T')[0];
+        const todayDate = this.formatLocalDate(now);
         
         const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-        const tomorrowDate = tomorrow.toISOString().split('T')[0];
+        const tomorrowDate = this.formatLocalDate(tomorrow);
         
         const endOfWeek = new Date(now);
         endOfWeek.setDate(endOfWeek.getDate() + 7);
-        const endOfWeekDate = endOfWeek.toISOString().split('T')[0];
+        const endOfWeekDate = this.formatLocalDate(endOfWeek);
 
         // Build the question based on time range
         let question: string;
@@ -187,8 +187,9 @@ export class MeetingService {
             }
         }
         
-        this.log(`Response (${fullResponse.length} chars): ${fullResponse.substring(0, 500)}...`);
-        return fullResponse;
+        const responseText = this.extractToolResponseText(fullResponse);
+        this.log(`Response (${responseText.length} chars): ${responseText.substring(0, 500)}...`);
+        return responseText;
     }
 
     private parseMeetings(response: string): Meeting[] {
@@ -203,20 +204,18 @@ export class MeetingService {
         
         // Parse JSON from response
         try {
-            const codeFenceMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
-            const jsonContent = codeFenceMatch ? codeFenceMatch[1].trim() : response;
-            const jsonMatch = jsonContent.match(/\[[\s\S]*?\]/);
+            const parsed = this.extractJsonArray(response);
             
-            if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]) as Array<{
+            if (parsed) {
+                const meetingsFromResponse = parsed as Array<{
                     title: string;
                     startTime: string;
                     endTime: string;
                     onlineJoinUrl?: string | null;
                 }>;
                 
-                for (let i = 0; i < parsed.length; i++) {
-                    const item = parsed[i];
+                for (let i = 0; i < meetingsFromResponse.length; i++) {
+                    const item = meetingsFromResponse[i];
                     const startTime = new Date(item.startTime);
                     const endTime = new Date(item.endTime);
                     
@@ -238,12 +237,101 @@ export class MeetingService {
                         status: this.getMeetingStatus(startTime, endTime)
                     });
                 }
+            } else {
+                this.log('No JSON array found in response');
             }
         } catch (e) {
             this.log(`Parse error: ${e}`);
         }
         
         return meetings.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    }
+
+    private extractJsonArray(response: string): unknown[] | null {
+        const codeFenceMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        const jsonContent = codeFenceMatch ? codeFenceMatch[1].trim() : response;
+        let start = jsonContent.indexOf('[');
+
+        while (start !== -1) {
+            const candidate = this.extractBalancedArray(jsonContent, start);
+            if (candidate) {
+                try {
+                    const parsed = JSON.parse(candidate);
+                    if (Array.isArray(parsed)) {
+                        return parsed;
+                    }
+                } catch {
+                    // Try the next array candidate.
+                }
+            }
+
+            start = jsonContent.indexOf('[', start + 1);
+        }
+
+        return null;
+    }
+
+    private extractBalancedArray(text: string, startIndex: number): string | null {
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+
+        for (let i = startIndex; i < text.length; i++) {
+            const ch = text[i];
+
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+
+            if (ch === '\\' && inString) {
+                escaped = true;
+                continue;
+            }
+
+            if (ch === '"') {
+                inString = !inString;
+                continue;
+            }
+
+            if (inString) {
+                continue;
+            }
+
+            if (ch === '[') {
+                depth++;
+            } else if (ch === ']') {
+                depth--;
+                if (depth === 0) {
+                    return text.slice(startIndex, i + 1);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private extractToolResponseText(fullResponse: string): string {
+        try {
+            const parsed = JSON.parse(fullResponse) as { response?: string | null; error?: string };
+            if (typeof parsed.response === 'string') {
+                return parsed.response;
+            }
+            if (parsed.error) {
+                return String(parsed.error);
+            }
+        } catch {
+            // The tool may already be returning plain text.
+        }
+
+        return fullResponse;
+    }
+
+    private formatLocalDate(date: Date): string {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
 
     private getMeetingStatus(start: Date, end: Date): 'upcoming' | 'inProgress' | 'ended' {

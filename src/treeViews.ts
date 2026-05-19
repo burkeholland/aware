@@ -107,20 +107,22 @@ export class DocumentTreeItem extends vscode.TreeItem {
         this.iconPath = this.getIconForType(document.type);
         this.description = document.lastModified ? this.formatDate(document.lastModified) : document.type;
 
-        this.command = {
-            command: 'vscode.open',
-            title: 'Open Document',
-            arguments: [vscode.Uri.parse(document.url)]
-        };
+        if (document.url) {
+            this.command = {
+                command: 'vscode.open',
+                title: 'Open Document',
+                arguments: [vscode.Uri.parse(document.url)]
+            };
+        }
 
         this.tooltip = new vscode.MarkdownString(
             `**${document.title}**\n\n` +
             `Type: ${document.type}\n` +
             (document.lastModified ? `Last Modified: ${document.lastModified.toLocaleDateString()}\n` : '') +
-            `\n[Click to open](${document.url})`
+            (document.url ? `\n[Click to open](${document.url})` : `\nLink unavailable in Work IQ results`)
         );
         this.tooltip.isTrusted = true;
-        this.contextValue = 'relatedDocument';
+        this.contextValue = document.url ? 'relatedDocument' : 'relatedDocumentNoUrl';
     }
 
     private getIconForType(type: string): vscode.ThemeIcon {

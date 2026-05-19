@@ -62,7 +62,7 @@ export interface WorkIQConnectionStatus {
 export interface RelatedDocument {
     id: string;
     title: string;
-    url: string;
+    url?: string;
     lastModified?: Date;
     type: string; // Word, Excel, PowerPoint, PDF, OneNote, Web Page, etc.
 }
