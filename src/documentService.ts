@@ -124,8 +124,9 @@ export class DocumentService {
             }
         }
         
-        this.log(`Response (${fullResponse.length} chars):\n${fullResponse}`);
-        return fullResponse;
+        const responseText = this.extractToolResponseText(fullResponse);
+        this.log(`Response (${responseText.length} chars):\n${responseText}`);
+        return responseText;
     }
 
     private parseDocumentResponse(response: string): RelatedDocument[] {
@@ -141,28 +142,20 @@ export class DocumentService {
         
         // Parse JSON from response
         try {
-            const codeFenceMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
-            const jsonContent = codeFenceMatch ? codeFenceMatch[1].trim() : response;
-            const jsonMatch = jsonContent.match(/\[[\s\S]*?\]/);
+            const parsed = this.extractJsonArray(response);
             
-            if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]) as Array<{
+            if (parsed) {
+                const documentsFromResponse = parsed as Array<{
                     title: string;
-                    url: string;
+                    url?: string;
                     type?: string;
                 }>;
                 
-                for (let i = 0; i < parsed.length; i++) {
-                    const item = parsed[i];
+                for (let i = 0; i < documentsFromResponse.length; i++) {
+                    const item = documentsFromResponse[i];
                     
                     // Use real URL from footnotes, falling back to JSON field
-                    const url = realUrls[i] || item.url;
-                    
-                    // Skip if no valid URL
-                    if (!url || !url.startsWith('http')) {
-                        this.log(`  Skipping "${item.title}" - no valid URL`);
-                        continue;
-                    }
+                    const url = this.resolveDocumentUrl(item.url, realUrls, i);
                     
                     documents.push({
                         id: `doc-${i}-${Date.now()}`,
@@ -171,7 +164,11 @@ export class DocumentService {
                         type: item.type || this.inferDocumentType(url)
                     });
                     
-                    this.log(`  [${i + 1}] "${item.title}" (${item.type || 'inferred'}) - ${url.substring(0, 60)}...`);
+                    if (url) {
+                        this.log(`  [${i + 1}] "${item.title}" (${item.type || 'inferred'}) - ${url.substring(0, 60)}...`);
+                    } else {
+                        this.log(`  [${i + 1}] "${item.title}" (${item.type || 'inferred'}) - no URL available`);
+                    }
                 }
             } else {
                 this.log('No JSON array found in response');
@@ -183,7 +180,106 @@ export class DocumentService {
         return documents;
     }
 
-    private inferDocumentType(url: string): string {
+    private extractJsonArray(response: string): unknown[] | null {
+        const codeFenceMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        const jsonContent = codeFenceMatch ? codeFenceMatch[1].trim() : response;
+        let start = jsonContent.indexOf('[');
+
+        while (start !== -1) {
+            const candidate = this.extractBalancedArray(jsonContent, start);
+            if (candidate) {
+                try {
+                    const parsed = JSON.parse(candidate);
+                    if (Array.isArray(parsed)) {
+                        return parsed;
+                    }
+                } catch {
+                    // Try the next array candidate.
+                }
+            }
+
+            start = jsonContent.indexOf('[', start + 1);
+        }
+
+        return null;
+    }
+
+    private extractBalancedArray(text: string, startIndex: number): string | null {
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+
+        for (let i = startIndex; i < text.length; i++) {
+            const ch = text[i];
+
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+
+            if (ch === '\\' && inString) {
+                escaped = true;
+                continue;
+            }
+
+            if (ch === '"') {
+                inString = !inString;
+                continue;
+            }
+
+            if (inString) {
+                continue;
+            }
+
+            if (ch === '[') {
+                depth++;
+            } else if (ch === ']') {
+                depth--;
+                if (depth === 0) {
+                    return text.slice(startIndex, i + 1);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private resolveDocumentUrl(rawUrl: string | undefined, realUrls: string[], index: number): string | undefined {
+        if (typeof rawUrl === 'string') {
+            const footnoteMatch = rawUrl.match(/^\[(\d+)\]$/);
+            if (footnoteMatch) {
+                const footnoteUrl = realUrls[parseInt(footnoteMatch[1], 10) - 1];
+                if (footnoteUrl) {
+                    return footnoteUrl;
+                }
+            }
+
+            if (rawUrl.startsWith('http')) {
+                return rawUrl;
+            }
+        }
+
+        return realUrls[index] || undefined;
+    }
+
+    private extractToolResponseText(fullResponse: string): string {
+        try {
+            const parsed = JSON.parse(fullResponse) as { response?: string | null; error?: string };
+            if (typeof parsed.response === 'string') {
+                return parsed.response;
+            }
+            if (parsed.error) {
+                return String(parsed.error);
+            }
+        } catch {
+            // The tool may already be returning plain text.
+        }
+
+        return fullResponse;
+    }
+
+    private inferDocumentType(url?: string): string {
+        if (!url) return 'Document';
         const urlLower = url.toLowerCase();
         if (urlLower.includes('.docx') || urlLower.includes('/word/')) return 'Word';
         if (urlLower.includes('.xlsx') || urlLower.includes('/excel/')) return 'Excel';

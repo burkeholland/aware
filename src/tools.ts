@@ -7,6 +7,20 @@ import * as vscode from 'vscode';
 import { MeetingService } from './meetingService';
 import { GetMeetingsInput, TimeRange } from './types';
 
+function formatDateWithLocalOffset(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    const offsetMinutes = -date.getTimezoneOffset();
+    const sign = offsetMinutes >= 0 ? '+' : '-';
+    const offsetHours = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, '0');
+    const offsetRemainderMinutes = String(Math.abs(offsetMinutes) % 60).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetRemainderMinutes}`;
+}
+
 export function registerTools(
     context: vscode.ExtensionContext,
     meetingService: MeetingService
@@ -52,8 +66,8 @@ class GetMeetingsTool implements vscode.LanguageModelTool<GetMeetingsInput> {
 
         const meetingsList = meetings.map(m => ({
             title: m.title,
-            startTime: m.startTime.toISOString(),
-            endTime: m.endTime.toISOString(),
+            startTime: formatDateWithLocalOffset(m.startTime),
+            endTime: formatDateWithLocalOffset(m.endTime),
             duration: m.duration,
             status: m.status,
             isOnline: m.isOnline,
@@ -119,8 +133,8 @@ class GetNextMeetingTool implements vscode.LanguageModelTool<Record<string, neve
         if (currentMeeting) {
             result.currentMeeting = {
                 title: currentMeeting.title,
-                startTime: currentMeeting.startTime.toISOString(),
-                endTime: currentMeeting.endTime.toISOString(),
+                startTime: formatDateWithLocalOffset(currentMeeting.startTime),
+                endTime: formatDateWithLocalOffset(currentMeeting.endTime),
                 duration: currentMeeting.duration,
                 isOnline: currentMeeting.isOnline,
                 hasJoinUrl: !!currentMeeting.joinUrl
@@ -130,8 +144,8 @@ class GetNextMeetingTool implements vscode.LanguageModelTool<Record<string, neve
         if (nextMeeting) {
             result.meeting = {
                 title: nextMeeting.title,
-                startTime: nextMeeting.startTime.toISOString(),
-                endTime: nextMeeting.endTime.toISOString(),
+                startTime: formatDateWithLocalOffset(nextMeeting.startTime),
+                endTime: formatDateWithLocalOffset(nextMeeting.endTime),
                 duration: nextMeeting.duration,
                 isOnline: nextMeeting.isOnline,
                 hasJoinUrl: !!nextMeeting.joinUrl
